@@ -1,4 +1,4 @@
-module github.com/gentcod/dotenv
+module github.com/gentcod/environ
 
 go 1.21.3
 
