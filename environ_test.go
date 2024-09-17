@@ -2,7 +2,7 @@ package environ_test
 
 import (
 	"testing"
-	environ "github.com/gentcod/dotenv"
+	environ "github.com/gentcod/environ"
 	"github.com/stretchr/testify/require"
 )
 
