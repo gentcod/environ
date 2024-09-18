@@ -15,7 +15,7 @@ type Config struct {
 }
 
 func TestEnviron(t *testing.T) {
-	filepath := "./env/test.env"
+	filepath := "test.env"
 	var conc Config
 	err := environ.Init(filepath, &conc)
 
