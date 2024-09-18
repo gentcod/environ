@@ -1,32 +1,27 @@
 package environ
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 )
 
-type config struct {
-	env map[string]any
-}
-
-//Init initializes the environment configurations and returns a map of key value
-func Init(path string) (map[string]any, error) {
-	config, err := loadConfig(path)
-	if err != nil || config == nil {
-		return nil, err
+//Init initializes the environment configurations and returns an error if it occurs.
+func Init(path string, conc any) (error) {
+	err := loadConfig(path, &conc)
+	if err != nil {
+		return err
 	}
 
-	fmt.Println(config.env)
-
-	return config.env, nil
+	return nil
 }
 
-// loadConfig takes the file path of the .env file and generates a
-func loadConfig(filepath string) (*config, error) {
+// loadConfig takes the file path of the .env file and parses the values to the config struct 
+func loadConfig(filepath string, conc *any) (error) {
 	data, err := os.ReadFile(filepath)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("error encoutered reading env file, %v", err)
 	}
 
 	dataString := string(data)
@@ -40,14 +35,19 @@ func loadConfig(filepath string) (*config, error) {
 	configMap := make(map[string]any)
 	for i := 0; i < len(keyVal); i++ {
 		if len(keyVal[i]) != 2 {
-			return nil, err
+			return fmt.Errorf("error related to env variable, make sure it is properly set, %v", err)
 		}
 		configMap[keyVal[i][0]] = keyVal[i][1]
 	}
 
-	config := &config{
-		env: configMap,
+	keystring, err := json.Marshal(configMap)
+	if err != nil {
+		return fmt.Errorf("error encoutered trying to marshal configMap, %v", err)
+	}
+	err = json.Unmarshal(keystring, &conc)
+	if err != nil {
+		return fmt.Errorf("error encoutered trying to unmarshall config struct, %v", err)
 	}
 
-	return config, nil
+	return nil
 }
