@@ -36,7 +36,7 @@ type Config struct {
 	MigrationUrl string
 }
 ~~~
-#### NB: Make sure that the struct field name matches the env key, in the form; field name: `FirstName`, env key: `FIRST_NAME`
+#### NB: Make sure that the struct field name matches the env key, i.e the CamelCase of the struct field matches the SNAKE_CASE of the env key in the form; field name: `FirstName`, env key: `FIRST_NAME`. 
 
 - Use the `Init` func to initialize and get your environment variables set:
 ~~~
