@@ -1,75 +1,115 @@
 package environ
 
 import (
-	"encoding/json"
+	"bufio"
+	"errors"
 	"fmt"
 	"os"
-	"regexp"
+	"reflect"
+	"strconv"
 	"strings"
 	"time"
 )
 
-//Init initializes the environment configurations and returns an error if it occurs.
-func Init(path string, conc any) (error) {	
-	err := loadConfig(path, &conc)
-	if err != nil {
-		return err
-	}
+const (
+	envFileErr      = "error reading env file: %w"
+	envVariableErr  = "error parsing line in env file: %q"
+	unsupportedErr  = "unsupported type for config struct field %s"
+	notStructPtrErr = "config must be a non-nil pointer to a struct"
+)
 
-	return nil
+// Init initializes the environment configurations and returns an error if it occurs.
+func Init(path string, conc any) error {
+	return loadConfig(path, conc)
 }
 
-// loadConfig takes the file path of the .env file and parses the values to the config struct 
-func loadConfig(filepath string, conc *any) (error) {
-	data, err := os.ReadFile(filepath)
+// loadConfig takes the file path of the .env file and parses the values to the config struct
+func loadConfig(filepath string, config any) error {
+	val := reflect.ValueOf(config)
+	if val.Kind() != reflect.Ptr || val.IsNil() {
+		return errors.New(notStructPtrErr)
+	}
+	elem := val.Elem()
+	if elem.Kind() != reflect.Struct {
+		return errors.New(notStructPtrErr)
+	}
+
+	file, err := os.Open(filepath)
 	if err != nil {
-		return fmt.Errorf(" error encoutered reading env file, %v", err)
+		return fmt.Errorf(envFileErr, err)
 	}
+	defer file.Close()
 
-	dataString := string(data)
-	fields := strings.Fields(dataString)
-	keyVal := [][]string{}
-	for i := 0; i < len(fields); i++ {
-		part := strings.SplitN(fields[i], "=", 2)
-		keyVal = append(keyVal, part)
-	}
-
-	configMap := make(map[string]any)
-	for i := 0; i < len(keyVal); i++ {
-		if len(keyVal[i]) != 2 {
-			return fmt.Errorf(" error related to env variable, make sure it is properly set, %v", err)
+	envMap := make(map[string]string)
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
 		}
-		val := parseValue(keyVal[i][1])
-		configMap[strings.ReplaceAll(keyVal[i][0], "_", "")] = val
+
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			return fmt.Errorf(envVariableErr, line)
+		}
+		envMap[parts[0]] = strings.Trim(parts[1], `"'`)
 	}
 
-	keystring, err := json.Marshal(configMap)
-	if err != nil {
-		return fmt.Errorf(" error encoutered trying to marshal configMap, %v", err)
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf(envFileErr, err)
 	}
 
-	err = json.Unmarshal(keystring, &conc)
-	if err != nil {
-		return fmt.Errorf(" error encoutered trying to unmarshall config struct, %v", err)
-	}
+	structType := elem.Type()
+	for i := 0; i < elem.NumField(); i++ {
+		fieldVal := elem.Field(i)
+		fieldType := structType.Field(i)
 
+		envKey := fieldType.Tag.Get("json")
+		if envKey == "" {
+			continue
+		}
+
+		if value, ok := envMap[envKey]; ok {
+			if err := setField(fieldVal, value); err != nil {
+				return fmt.Errorf("error setting field %s: %w", fieldType.Name, err)
+			}
+		}
+	}
 	return nil
 }
 
-// parseValue casts the string value to as the appropriate field value type
-func parseValue(val string) any {
-	regex := `^\d+(\.\d+)?[smhd]$|^\d+[smhd](\d+[smhd])*$`
-	re := regexp.MustCompile(regex)
-
-	if !re.MatchString(val) {
-		return val
+// setField casts the string value to as the appropriate field value type
+func setField(field reflect.Value, value string) error {
+	if !field.CanSet() {
+		return nil
 	}
 
-	duration, err := time.ParseDuration(val)
-	if err != nil {
-		return val
+	if field.Type() == reflect.TypeOf(time.Duration(0)) {
+		d, err := time.ParseDuration(value)
+		if err != nil {
+			return err
+		}
+		field.SetInt(int64(d))
+		return nil
 	}
 
-	return duration
+	switch field.Kind() {
+	case reflect.String:
+		field.SetString(value)
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		intValue, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return err
+		}
+		field.SetInt(intValue)
+	case reflect.Bool:
+		boolValue, err := strconv.ParseBool(value)
+		if err != nil {
+			return err
+		}
+		field.SetBool(boolValue)
+	default:
+		return fmt.Errorf(unsupportedErr, field.Type().String())
+	}
+	return nil
 }
-// TODO: Resolve parseValue for other field types asides time.Duration
